@@ -83,18 +83,16 @@ fun AppRoot(viewModel: MainViewModel = hiltViewModel()) {
             ownedUpgrades = state.ownedUpgrades,
             activePerks = state.activePerks,
             activeBoosts = state.activeBoosts,
-            onBuySkin = viewModel::buySkin,
             onSelectSkin = viewModel::selectSkin,
-            onBuyTrail = viewModel::buyTrail,
             onSelectTrail = viewModel::selectTrail,
-            onBuyUpgrade = viewModel::buyUpgrade,
-            onBuyPerk = viewModel::buyPerk,
             onBuyBoost = viewModel::buyBoost,
+            onGoToSlots = viewModel::goToSlots,
             onBack = viewModel::goToMenu
         )
         "settings" -> SettingsScreen(
             speedMultiplier = state.speedMultiplier,
             onSpeedChange = viewModel::setSpeedMultiplier,
+            onUnlockAllSkins = viewModel::unlockAllSkins,
             onBack = viewModel::goToMenu
         )
         "slots" -> SlotMachineScreen(
@@ -102,11 +100,12 @@ fun AppRoot(viewModel: MainViewModel = hiltViewModel()) {
             reels = state.slotReels,
             offsets = state.slotOffsets,
             spinning = state.slotSpinning,
-            bet = state.slotBet,
+            slotSymbols = state.slotSymbols,
             lastResult = state.slotLastResult,
-            lastWin = state.slotLastWin,
-            onBetChange = viewModel::setSlotBet,
+            wonSkins = state.slotWonSkins,
+            rewardVisible = state.slotRewardVisible,
             onSpin = viewModel::spinSlots,
+            onDismissReward = viewModel::dismissSlotReward,
             onBack = viewModel::goToMenu
         )
         "quests" -> DailyQuestsScreen(

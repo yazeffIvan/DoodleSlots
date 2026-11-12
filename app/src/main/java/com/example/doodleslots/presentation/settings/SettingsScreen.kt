@@ -18,16 +18,13 @@ import com.example.doodleslots.presentation.theme.GamePalette
 fun SettingsScreen(
     speedMultiplier: Float,
     onSpeedChange: (Float) -> Unit,
+    onUnlockAllSkins: () -> Unit,
     onBack: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(GamePalette.BgTop, GamePalette.BgBottom)
-                )
-            )
+            .background(Brush.verticalGradient(listOf(GamePalette.BgTop, GamePalette.BgBottom)))
     ) {
         Column(
             modifier = Modifier
@@ -35,16 +32,8 @@ fun SettingsScreen(
                 .padding(16.dp)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
         ) {
-            Text(
-                "⚙ НАСТРОЙКИ",
-                style = MaterialTheme.typography.headlineMedium,
-                color = GamePalette.NeonCyan
-            )
-            Text(
-                "Скорость и управление",
-                style = MaterialTheme.typography.labelSmall,
-                color = GamePalette.TextMuted
-            )
+            Text("⚙ НАСТРОЙКИ", style = MaterialTheme.typography.headlineMedium, color = GamePalette.NeonCyan)
+            Text("Скорость и управление", style = MaterialTheme.typography.labelSmall, color = GamePalette.TextMuted)
 
             Spacer(Modifier.height(24.dp))
 
@@ -54,11 +43,7 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "⚡ СКОРОСТЬ",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = GamePalette.TextPrimary
-                    )
+                    Text("⚡ СКОРОСТЬ", style = MaterialTheme.typography.titleMedium, color = GamePalette.TextPrimary)
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "Текущая: ${"%.1f".format(speedMultiplier)}x",
@@ -78,19 +63,44 @@ fun SettingsScreen(
                                 modifier = Modifier.weight(1f).height(48.dp),
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (selected)
-                                        GamePalette.NeonCyan
-                                    else
-                                        GamePalette.SurfaceHigh,
+                                    containerColor = if (selected) GamePalette.NeonCyan else GamePalette.SurfaceHigh,
                                     contentColor = if (selected) Color.Black else GamePalette.TextPrimary
                                 )
                             ) {
-                                Text(
-                                    "${s}x",
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Text("${s}x", fontWeight = FontWeight.Bold)
                             }
                         }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // === Тестовая кнопка ===
+            Surface(
+                color = GamePalette.Surface,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("🛠 DEV", style = MaterialTheme.typography.titleMedium, color = GamePalette.TextPrimary)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Только для тестов",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = GamePalette.TextMuted
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = onUnlockAllSkins,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = GamePalette.Gold,
+                            contentColor = Color.Black
+                        )
+                    ) {
+                        Text("🔓 Открыть все скины", fontWeight = FontWeight.Bold)
                     }
                 }
             }

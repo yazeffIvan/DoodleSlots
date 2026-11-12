@@ -18,6 +18,7 @@ import android.view.TextureView
 import com.example.doodleslots.R
 import com.example.doodleslots.domain.engine.GameConfig
 import com.example.doodleslots.domain.engine.GameEngine
+import com.example.doodleslots.domain.shop.ShopCatalog
 import kotlin.concurrent.thread
 import kotlin.math.cos
 import kotlin.math.sin
@@ -50,6 +51,9 @@ class GameView(context: Context, val engine: GameEngine) : TextureView(context),
     private val bonusRect = RectF()
     private val srcRect = Rect()
     private val bonusPath = Path()
+
+    // Кэш картинок скинов
+    private val skinCache = mutableMapOf<String, Bitmap?>()
 
     var onHudUpdate: (() -> Unit)? = null
 
@@ -136,6 +140,15 @@ class GameView(context: Context, val engine: GameEngine) : TextureView(context),
     }
 
     private fun stopRenderThread() { running = false; renderThread?.join(500); renderThread = null }
+
+    private fun getSkinBitmap(skinId: String): Bitmap? {
+        if (skinCache.containsKey(skinId)) return skinCache[skinId]
+        val skin = ShopCatalog.skinById(skinId)
+        val drawableId = skin?.drawableRes
+        val bmp = if (drawableId != null) BitmapFactory.decodeResource(resources, drawableId) else null
+        skinCache[skinId] = bmp
+        return bmp
+    }
 
     private fun updateWeather(dt: Float) {
         weatherTimer += dt
@@ -331,19 +344,17 @@ class GameView(context: Context, val engine: GameEngine) : TextureView(context),
     }
 
     private fun drawPlatform(c: Canvas, x: Float, y: Float, w: Float, h: Float, bonus: Int?) {
-        // Ищем платформу для доступа к типу и таймеру
         val platform = engine.platforms.firstOrNull { it.x == x && it.y == y }
 
         paint.shader = null
         val accent = when (platform?.platformType) {
-            1 -> AndroidColor.rgb(150, 150, 150)   // исчезающая — серая
-            2 -> AndroidColor.rgb(30, 144, 255)    // двигающаяся — синяя
-            3 -> AndroidColor.rgb(200, 50, 50)     // хрупкая — красная
-            4 -> gold                              // золотая
+            1 -> AndroidColor.rgb(150, 150, 150)
+            2 -> AndroidColor.rgb(30, 144, 255)
+            3 -> AndroidColor.rgb(200, 50, 50)
+            4 -> gold
             else -> when (bonus) { 1 -> neonCyan; 2 -> neonRed; 3 -> gold; else -> neonPurple }
         }
 
-        // Прозрачность исчезающих — чем меньше таймер, тем прозрачнее
         val alpha = if (platform?.platformType == 1 && platform.lifeTimer > 0f) {
             (255 * (platform.lifeTimer / GameConfig.HARDCORE_VANISH_TIMER)).toInt().coerceIn(50, 255)
         } else 255
@@ -360,7 +371,6 @@ class GameView(context: Context, val engine: GameEngine) : TextureView(context),
         paint.color = AndroidColor.argb((180 * alpha / 255), 255, 255, 255)
         c.drawRoundRect(x + 4f, y + 2f, x + w - 4f, y + 6f, 4f, 4f, paint)
 
-        // Индикатор "хрупкая" — пунктир
         if (platform?.platformType == 3) {
             paint.color = AndroidColor.argb(200, 255, 200, 200)
             paint.strokeWidth = 2f
@@ -484,19 +494,24 @@ class GameView(context: Context, val engine: GameEngine) : TextureView(context),
         val rx = 50f - stretch / 2f
         val ry = 50f + stretch / 2f
 
-        val rect = RectF(cx - rx, cy - ry, cx + rx, cy + ry)
-        paint.color = playerColor
-        c.drawOval(rect, paint)
+        val skinBmp = getSkinBitmap(engine.currentSkinId)
 
-        paint.color = AndroidColor.argb(200, 255, 255, 255)
-        c.drawCircle(cx - rx * 0.35f, cy - ry * 0.35f, rx * 0.25f, paint)
+        if (skinBmp != null) {
+            val src = Rect(0, 0, skinBmp.width, skinBmp.height)
+            val dst = RectF(cx - rx, cy - ry, cx + rx, cy + ry)
+            paint.alpha = 255
+            c.drawBitmap(skinBmp, src, dst, paint)
+        } else {
+            val rect = RectF(cx - rx, cy - ry, cx + rx, cy + ry)
+            paint.color = playerColor
+            c.drawOval(rect, paint)
+            paint.color = AndroidColor.argb(200, 255, 255, 255)
+            c.drawCircle(cx - rx * 0.35f, cy - ry * 0.35f, rx * 0.25f, paint)
+            paint.color = AndroidColor.rgb(30, 90, 140)
+            c.drawCircle(cx, cy, rx * 0.35f, paint)
+        }
 
-        paint.color = AndroidColor.rgb(30, 90, 140)
-        c.drawCircle(cx, cy, rx * 0.35f, paint)
-
-        // Индикатор щита
         if (engine.immuneTimer > 0f) {
-            // Кольцо-щит
             paint.shader = null
             paint.color = neonCyan
             paint.style = Paint.Style.STROKE
@@ -504,7 +519,6 @@ class GameView(context: Context, val engine: GameEngine) : TextureView(context),
             c.drawCircle(cx, cy, rx + 12f, paint)
             paint.style = Paint.Style.FILL
 
-            // Свечение вокруг кольца
             glowPaint.shader = RadialGradient(
                 cx, cy, rx + 30f,
                 intArrayOf(
@@ -517,7 +531,6 @@ class GameView(context: Context, val engine: GameEngine) : TextureView(context),
             c.drawCircle(cx, cy, rx + 30f, glowPaint)
             glowPaint.shader = null
 
-            // Значок щита — рисуем фигурой (не эмодзи, чтобы работало везде)
             val shieldX = cx
             val shieldY = cy - ry - 25f
             val shieldPath = Path().apply {

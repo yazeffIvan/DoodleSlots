@@ -42,7 +42,6 @@ class GameEngine(
     private val moneyMultiplier: Int = baseMoneyMult *
             (if (mode == GameMode.HARDCORE) GameConfig.HARDCORE_MONEY_MULT else 1)
 
-    /** Шаг платформ в текущем режиме */
     private val actualStepY: Float =
         if (mode == GameMode.HARDCORE) GameConfig.HARDCORE_PLATFORM_STEP_Y else params.platformStepY
 
@@ -63,6 +62,7 @@ class GameEngine(
     var isLeverageActive = hasLeverageBoost
 
     var trailColorId = "green"
+    var currentSkinId = "default"
 
     var inputLeft = false
     var inputRight = false
@@ -176,10 +176,9 @@ class GameEngine(
         for (i in trailPoints.indices) trailPoints[i].alpha -= 0.06f
         trailPoints.removeAll { it.alpha <= 0f }
 
-        // --- Обновление платформ ---
+        // Обновление платформ
         val platformsToRemove = mutableListOf<PlatformModel>()
         for (p in platforms) {
-            // Двигающаяся
             if (p.platformType == 2 && p.moveSpeed != 0f) {
                 p.x += p.moveSpeed
                 if (p.x < GameConfig.PLATFORM_MARGIN) {
@@ -191,19 +190,13 @@ class GameEngine(
                     p.moveSpeed = -p.moveSpeed
                 }
             }
-            // Исчезающая: тикает таймер только если он запущен (при касании)
             if (p.platformType == 1 && p.lifeTimer >= 0f) {
                 p.lifeTimer -= baseDt
-                if (p.lifeTimer <= 0f) {
-                    platformsToRemove.add(p)
-                }
+                if (p.lifeTimer <= 0f) platformsToRemove.add(p)
             }
-            // Хрупкая: таймер тоже может быть запущен
             if (p.platformType == 3 && p.lifeTimer >= 0f) {
                 p.lifeTimer -= baseDt
-                if (p.lifeTimer <= 0f) {
-                    platformsToRemove.add(p)
-                }
+                if (p.lifeTimer <= 0f) platformsToRemove.add(p)
             }
         }
         if (platformsToRemove.isNotEmpty()) {
@@ -220,7 +213,7 @@ class GameEngine(
             if (b.y < -100f) bullets.removeAt(i)
         }
 
-        // Попадания
+        // Попадания пуль
         for (i in bullets.indices.reversed()) {
             val b = bullets[i]
             var consumed = false
@@ -253,7 +246,6 @@ class GameEngine(
             val c = coins[i]
             c.vy += 0.3f
             c.y += c.vy
-
             if (hasMagnetUpgrade) {
                 val dx = (playerX + 50f) - c.x
                 val dy = (playerY + 50f) - c.y
@@ -263,13 +255,11 @@ class GameEngine(
                     c.y += dy / dist * GameConfig.MAGNET_FORCE
                 }
             }
-
             if (abs(c.x - (playerX + 50f)) < 60f && abs(c.y - (playerY + 50f)) < 60f) {
                 money += 10 * moneyMultiplier
                 coins.removeAt(i)
                 continue
             }
-
             if (c.y > 1500f) coins.removeAt(i)
         }
 
@@ -297,11 +287,9 @@ class GameEngine(
                     val reward = if (p.platformType == 4) baseReward * 3 else baseReward
                     money += reward
 
-                    // Запуск таймера исчезновения ТОЛЬКО при касании
                     if (p.platformType == 1 && p.lifeTimer < 0f) {
                         p.lifeTimer = GameConfig.HARDCORE_VANISH_TIMER
                     }
-                    // Хрупкая — исчезает быстро после прыжка
                     if (p.platformType == 3 && p.lifeTimer < 0f) {
                         p.lifeTimer = 0.3f
                     }

@@ -1,5 +1,6 @@
 package com.example.doodleslots.presentation.shop
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -10,8 +11,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,13 +33,10 @@ fun ShopScreen(
     ownedUpgrades: Set<String>,
     activePerks: Set<String>,
     activeBoosts: Set<String>,
-    onBuySkin: (String, Int) -> Unit,
     onSelectSkin: (String) -> Unit,
-    onBuyTrail: (String, Int) -> Unit,
     onSelectTrail: (String) -> Unit,
-    onBuyUpgrade: (String, Int) -> Unit,
-    onBuyPerk: (String, Int) -> Unit,
     onBuyBoost: (String, Int) -> Unit,
+    onGoToSlots: () -> Unit,
     onBack: () -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(ShopCategory.SKIN) }
@@ -58,8 +58,8 @@ fun ShopScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("🛒 МАГАЗИН", style = MaterialTheme.typography.headlineMedium, color = GamePalette.NeonCyan)
-                    Text("Всё для настоящего дегена", style = MaterialTheme.typography.labelSmall, color = GamePalette.TextMuted)
+                    Text("🎒 КОЛЛЕКЦИЯ", style = MaterialTheme.typography.headlineMedium, color = GamePalette.NeonCyan)
+                    Text("Твои скины и улучшения", style = MaterialTheme.typography.labelSmall, color = GamePalette.TextMuted)
                 }
                 Surface(color = GamePalette.Surface, shape = RoundedCornerShape(12.dp)) {
                     Text(
@@ -97,49 +97,49 @@ fun ShopScreen(
                             item = item,
                             isOwned = ownedSkins.contains(item.id),
                             isSelected = currentSkin == item.id,
-                            canAfford = money >= item.price,
                             accent = GamePalette.NeonCyan,
                             onClick = {
                                 if (ownedSkins.contains(item.id)) onSelectSkin(item.id)
-                                else onBuySkin(item.id, item.price)
+                                else onGoToSlots()
                             }
                         )
                         ShopCategory.TRAIL -> ShopItemCard(
                             item = item,
                             isOwned = ownedTrails.contains(item.id),
                             isSelected = currentTrail == item.id,
-                            canAfford = money >= item.price,
                             accent = GamePalette.NeonGreen,
                             onClick = {
                                 if (ownedTrails.contains(item.id)) onSelectTrail(item.id)
-                                else onBuyTrail(item.id, item.price)
+                                else onGoToSlots()
                             }
                         )
                         ShopCategory.UPGRADE -> ShopItemCard(
                             item = item,
                             isOwned = ownedUpgrades.contains(item.id),
                             isSelected = false,
-                            canAfford = money >= item.price,
                             accent = GamePalette.Gold,
-                            onClick = { onBuyUpgrade(item.id, item.price) }
+                            onClick = {
+                                if (!ownedUpgrades.contains(item.id)) onGoToSlots()
+                            }
                         )
                         ShopCategory.PERK -> ShopItemCard(
                             item = item,
                             isOwned = activePerks.contains(item.id),
                             isSelected = activePerks.contains(item.id),
-                            canAfford = money >= item.price,
                             accent = GamePalette.NeonPurple,
                             onClick = {
-                                if (!activePerks.contains(item.id)) onBuyPerk(item.id, item.price)
+                                if (!activePerks.contains(item.id)) onGoToSlots()
                             }
                         )
                         ShopCategory.BOOST -> ShopItemCard(
                             item = item,
                             isOwned = activeBoosts.contains(item.id),
                             isSelected = false,
-                            canAfford = money >= item.price,
                             accent = GamePalette.NeonRed,
-                            onClick = { onBuyBoost(item.id, item.price) }
+                            canAfford = money >= item.price,
+                            onClick = {
+                                if (!activeBoosts.contains(item.id)) onBuyBoost(item.id, item.price)
+                            }
                         )
                     }
                 }
@@ -181,9 +181,9 @@ private fun ShopItemCard(
     item: ShopItem,
     isOwned: Boolean,
     isSelected: Boolean,
-    canAfford: Boolean,
     accent: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    canAfford: Boolean = true
 ) {
     Surface(
         modifier = Modifier
@@ -202,7 +202,21 @@ private fun ShopItemCard(
                 modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(item.emoji, fontSize = 32.sp)
+                Box(
+                    modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (item.drawableRes != null) {
+                        Image(
+                            painter = painterResource(id = item.drawableRes),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
+                        )
+                    } else {
+                        Text(item.emoji, fontSize = 32.sp)
+                    }
+                }
+
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -221,13 +235,15 @@ private fun ShopItemCard(
 
             Spacer(Modifier.width(8.dp))
 
+            // Логика отображения кнопки/статуса
             when {
                 isSelected -> Badge("НАДЕТО", GamePalette.NeonCyan)
                 isOwned && item.category == ShopCategory.UPGRADE -> Badge("КУПЛЕНО", GamePalette.NeonGreen)
                 isOwned && item.category == ShopCategory.PERK -> Badge("АКТИВЕН", GamePalette.NeonPurple)
                 isOwned && item.category == ShopCategory.BOOST -> Badge("ГОТОВ", GamePalette.NeonRed)
                 isOwned -> Badge("ВЫБРАТЬ", GamePalette.NeonGreen)
-                else -> {
+                // Только для бустов показываем цену
+                item.category == ShopCategory.BOOST -> {
                     Surface(
                         color = if (canAfford) accent else GamePalette.TextMuted,
                         shape = RoundedCornerShape(10.dp)
@@ -241,6 +257,8 @@ private fun ShopItemCard(
                         )
                     }
                 }
+                // Для всего остального — кнопка "Найти"
+                else -> Badge("НАЙТИ", GamePalette.NeonCyan)
             }
         }
     }

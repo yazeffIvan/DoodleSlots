@@ -10,6 +10,7 @@ import com.example.doodleslots.domain.engine.TunableParams
 import com.example.doodleslots.domain.repository.DailyQuestRepository
 import com.example.doodleslots.domain.repository.GameRepository
 import com.example.doodleslots.domain.repository.TunableParamsRepository
+import com.example.doodleslots.domain.shop.ShopCatalog
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,8 +29,10 @@ class MainViewModel @Inject constructor(
     private val dailyQuestRepository: DailyQuestRepository
 ) : ViewModel() {
 
-    private val symbolCount = 6
     private val questManager = DailyQuestManager(dailyQuestRepository)
+
+    // === Счётчик прокрутов для гарантированного выигрыша ===
+    private var spinCount = 0
 
     private val _state = MutableStateFlow(
         MainUiState(
@@ -84,10 +87,9 @@ class MainViewModel @Inject constructor(
         engine?.let { saveRunStats(it) }
         engine = null
         refreshQuests()
-        _state.update { it.copy(screen = "menu", modeSelectionVisible = false) }
+        _state.update { it.copy(screen = "menu", modeSelectionVisible = false, slotRewardVisible = false) }
     }
 
-    /** Нажатие на "Играть" — показываем попап выбора режима */
     fun showModeSelection() {
         _state.update { it.copy(modeSelectionVisible = true) }
     }
@@ -96,7 +98,6 @@ class MainViewModel @Inject constructor(
         _state.update { it.copy(modeSelectionVisible = false) }
     }
 
-    /** Старт игры в выбранном режиме */
     fun startGame(mode: GameMode) {
         val s = _state.value
         val params = TunableParams(paramsRepository)
@@ -110,6 +111,7 @@ class MainViewModel @Inject constructor(
             money = s.money
             speedMultiplier = 1.0f
             trailColorId = s.currentTrail
+            currentSkinId = s.currentSkin
         }
         if (s.activeBoosts.isNotEmpty()) {
             gameRepository.saveActiveBoosts(emptySet())
@@ -133,6 +135,7 @@ class MainViewModel @Inject constructor(
             money = s.money
             speedMultiplier = 1.0f
             trailColorId = s.currentTrail
+            currentSkinId = s.currentSkin
         }
         _state.update { it.copy(screen = "menu") }
         _state.update { it.copy(screen = "game") }
@@ -150,7 +153,6 @@ class MainViewModel @Inject constructor(
         gameRepository.saveBestWave(newBestWave)
         gameRepository.saveTotalKills(newTotalKills)
 
-        // Отдельный рекорд для Hardcore
         if (e.mode == GameMode.HARDCORE && e.score > s.hardcoreBest) {
             gameRepository.saveHardcoreBest(e.score)
             _state.update { it.copy(hardcoreBest = e.score) }
@@ -176,8 +178,6 @@ class MainViewModel @Inject constructor(
     fun goToSlots() { _state.update { it.copy(screen = "slots") } }
     fun goToQuests() { refreshQuests(); _state.update { it.copy(screen = "quests") } }
 
-    // ================ ДЕЙЛИКИ ================
-
     fun claimQuest(id: String) {
         val reward = questManager.claim(id)
         if (reward > 0) {
@@ -188,40 +188,83 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    // ================ СЛОТЫ (без изменений) ================
+    // ================ СЛОТЫ ================
 
-    fun setSlotBet(bet: Int) {
-        if (_state.value.slotSpinning) return
-        if (bet > _state.value.money) return
-        _state.update { it.copy(slotBet = bet) }
+    fun dismissSlotReward() {
+        _state.update { it.copy(slotRewardVisible = false, slotWonSkins = emptyList()) }
+    }
+
+    private fun getSlotSymbols(ownedSkins: Set<String>): List<String> {
+        val notOwnedSkinIds = ShopCatalog.droppableSkins
+            .filter { !ownedSkins.contains(it.id) }
+            .map { it.id }
+
+        val symbols = mutableListOf<String>()
+        symbols.addAll(notOwnedSkinIds)
+        symbols.add("seven")
+        while (symbols.size < 6) symbols.add("dummy")
+        return symbols.shuffled()
     }
 
     fun spinSlots() {
         val s = _state.value
         if (s.slotSpinning) return
-        if (s.slotBet > s.money) return
 
-        questManager.addProgress(QuestType.SPIN_SLOTS, 1)
+        val spinCost = 10
+        if (s.money < spinCost) return
 
-        val moneyAfterBet = s.money - s.slotBet
-        gameRepository.saveMoney(moneyAfterBet)
+        val moneyAfterCost = s.money - spinCost
+        gameRepository.saveMoney(moneyAfterCost)
+
         _state.update {
             it.copy(
-                money = moneyAfterBet,
+                money = moneyAfterCost,
                 slotSpinning = true,
                 slotLastResult = null,
-                slotLastWin = 0,
+                slotWonSkins = emptyList(),
+                slotRewardVisible = false,
                 slotOffsets = listOf(0f, 0f, 0f)
             )
         }
 
         viewModelScope.launch {
-            val finalReels = List(3) { Random.nextInt(symbolCount) }
+            val availableSymbols = getSlotSymbols(s.ownedSkins)
+            _state.update { it.copy(slotSymbols = availableSymbols) }
+
+            // === Гарантированный выигрыш для первых 4 прокрутов ===
+            val isForcedWin = spinCount < 4
+            spinCount++
+
+            val finalReels: List<Int> = if (isForcedWin) {
+                // Сначала решаем: скин или 777?
+                val notOwnedSkins = ShopCatalog.droppableSkins
+                    .filter { !s.ownedSkins.contains(it.id) }
+                    .map { it.id }
+
+                val winSkin = if (notOwnedSkins.isNotEmpty() && Random.nextFloat() < 0.6f) {
+                    notOwnedSkins.random()
+                } else null
+
+                if (winSkin != null) {
+                    // Ищем индекс winSkin в availableSymbols и ставим его на все барабаны
+                    val idx = availableSymbols.indexOf(winSkin).coerceAtLeast(0)
+                    List(3) { idx }
+                } else {
+                    // 777
+                    val sevenIdx = availableSymbols.indexOf("seven").coerceAtLeast(0)
+                    List(3) { sevenIdx }
+                }
+            } else {
+                // Обычный рандом
+                List(3) { Random.nextInt(availableSymbols.size) }
+            }
+
             val totalDuration = 1200f
             val frameDelay = 16L
             val frames = (totalDuration / frameDelay).toInt()
             val stopPercents = listOf(0.60f, 0.80f, 1.00f)
             val currentOffsets = MutableList(3) { 0f }
+            val reelCount = availableSymbols.size
 
             for (frame in 0..frames) {
                 val progress = frame.toFloat() / frames
@@ -233,8 +276,8 @@ class MainViewModel @Inject constructor(
                         currentOffsets[i] += baseSpeed * (speed + 0.15f)
                     } else {
                         val stopOffset = finalReels[i].toFloat()
-                        val currentMod = currentOffsets[i] % symbolCount
-                        val delta = ((stopOffset - currentMod) + symbolCount) % symbolCount
+                        val currentMod = currentOffsets[i] % reelCount
+                        val delta = ((stopOffset - currentMod) + reelCount) % reelCount
                         val remainingFrames = frames - frame
                         if (remainingFrames > 0) {
                             currentOffsets[i] += delta / remainingFrames.toFloat()
@@ -247,54 +290,62 @@ class MainViewModel @Inject constructor(
                     it.copy(
                         slotOffsets = currentOffsets.toList(),
                         slotReels = currentOffsets.map { offset ->
-                            (offset.toInt() % symbolCount + symbolCount) % symbolCount
+                            (offset.toInt() % reelCount + reelCount) % reelCount
                         }
                     )
                 }
                 delay(frameDelay)
             }
 
-            val multiplier = calculateMultiplier(finalReels)
-            val win = (s.slotBet * multiplier).toInt()
-            val newMoney = moneyAfterBet + win
-            gameRepository.saveMoney(newMoney)
+            val sym1 = availableSymbols[finalReels[0]]
+            val sym2 = availableSymbols[finalReels[1]]
+            val sym3 = availableSymbols[finalReels[2]]
 
-            if (multiplier >= 3f) {
-                questManager.addProgress(QuestType.WIN_SLOTS, 1)
+            var wonSkins = emptyList<String>()
+            var moneyReward = 0
+            var resultText = "💀 Мимо"
+
+            if (sym1 == sym2 && sym2 == sym3) {
+                when {
+                    sym1 == "seven" -> {
+                        moneyReward = 500
+                        resultText = "🎰 777! +$500 $"
+                    }
+                    sym1 == "dummy" -> {
+                        resultText = "💨 Пустышки. Ничего."
+                    }
+                    else -> {
+                        wonSkins = listOf(sym1)
+                        resultText = "🎉 ВЫПАЛ СКИН!"
+                    }
+                }
+            } else if (sym1 == sym2 || sym2 == sym3 || sym1 == sym3) {
+                resultText = "😐 Две одинаковые. Ноль."
             }
 
-            val resultText = when {
-                multiplier >= 5f -> "🎉 ДЖЕКПОТ x5!"
-                multiplier >= 4f -> "💎 БОМБА x$multiplier"
-                multiplier >= 3f -> "🔥 КРУТО x$multiplier"
-                multiplier >= 2f -> "✨ ХОРОШО x$multiplier"
-                multiplier >= 1f -> "🙂 Возврат x1"
-                else -> "💀 Мимо"
+            var newMoney = moneyAfterCost + moneyReward
+            if (moneyReward > 0) gameRepository.saveMoney(newMoney)
+
+            var newOwnedSkins = s.ownedSkins
+            if (wonSkins.isNotEmpty()) {
+                newOwnedSkins = s.ownedSkins + wonSkins
+                gameRepository.saveOwnedSkins(newOwnedSkins)
             }
 
             _state.update {
                 it.copy(
                     money = newMoney,
+                    ownedSkins = newOwnedSkins,
                     slotSpinning = false,
                     slotReels = finalReels,
                     slotOffsets = finalReels.map { it.toFloat() },
                     slotLastResult = resultText,
-                    slotLastWin = win
+                    slotWonSkins = wonSkins,
+                    slotRewardVisible = wonSkins.isNotEmpty()
                 )
             }
             refreshQuests()
         }
-    }
-
-    private fun calculateMultiplier(reels: List<Int>): Float {
-        val a = reels[0]; val b = reels[1]; val c = reels[2]
-        if (a == b && b == c) {
-            return when (a) {
-                0 -> 2f; 1 -> 2.5f; 2 -> 3f; 3 -> 4f; 4 -> 4.5f; 5 -> 5f; else -> 0f
-            }
-        }
-        if (a == b || b == c || a == c) return 1f
-        return 0f
     }
 
     // ================ МАГАЗИН ================
@@ -307,7 +358,6 @@ class MainViewModel @Inject constructor(
         gameRepository.saveMoney(newMoney)
         gameRepository.saveOwnedSkins(newSkins)
         gameRepository.saveCurrentSkin(id)
-        questManager.addProgress(QuestType.BUY_ITEM, 1)
         _state.update { it.copy(money = newMoney, ownedSkins = newSkins, currentSkin = id) }
         refreshQuests()
     }
@@ -326,7 +376,6 @@ class MainViewModel @Inject constructor(
         gameRepository.saveMoney(newMoney)
         gameRepository.saveOwnedTrails(newTrails)
         gameRepository.saveCurrentTrail(id)
-        questManager.addProgress(QuestType.BUY_ITEM, 1)
         _state.update { it.copy(money = newMoney, ownedTrails = newTrails, currentTrail = id) }
         refreshQuests()
     }
@@ -345,7 +394,6 @@ class MainViewModel @Inject constructor(
         val newMoney = s.money - price
         gameRepository.saveMoney(newMoney)
         gameRepository.saveOwnedUpgrades(newUpgrades)
-        questManager.addProgress(QuestType.BUY_ITEM, 1)
         _state.update { it.copy(money = newMoney, ownedUpgrades = newUpgrades) }
         refreshQuests()
     }
@@ -358,7 +406,6 @@ class MainViewModel @Inject constructor(
         val newMoney = s.money - price
         gameRepository.saveMoney(newMoney)
         gameRepository.saveActivePerks(newPerks)
-        questManager.addProgress(QuestType.BUY_ITEM, 1)
         _state.update { it.copy(money = newMoney, activePerks = newPerks) }
         refreshQuests()
     }
@@ -378,7 +425,6 @@ class MainViewModel @Inject constructor(
         val newMoney = s.money - price
         gameRepository.saveMoney(newMoney)
         gameRepository.saveActiveBoosts(newBoosts)
-        questManager.addProgress(QuestType.BUY_ITEM, 1)
         _state.update { it.copy(money = newMoney, activeBoosts = newBoosts) }
         refreshQuests()
     }
@@ -386,5 +432,12 @@ class MainViewModel @Inject constructor(
     fun setSpeedMultiplier(value: Float) {
         gameRepository.saveSpeedMultiplier(value)
         _state.update { it.copy(speedMultiplier = value) }
+    }
+
+    /** Открыть все скины (для тестов) */
+    fun unlockAllSkins() {
+        val allSkinIds = ShopCatalog.allSkins.map { it.id }.toSet()
+        gameRepository.saveOwnedSkins(allSkinIds)
+        _state.update { it.copy(ownedSkins = allSkinIds) }
     }
 }

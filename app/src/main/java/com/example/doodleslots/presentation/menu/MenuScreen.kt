@@ -85,7 +85,7 @@ fun MenuScreen(
                 MenuButton("▶  ИГРАТЬ", GamePalette.NeonGreen, true, onShowModeSelection)
                 MenuButton("🎰  СЛОТЫ", GamePalette.Gold, true, onSlots)
                 MenuButton("🎯  ЗАДАНИЯ", GamePalette.NeonPurple, true, onQuests)
-                MenuButton("🛒  МАГАЗИН", GamePalette.NeonCyan, false, onShop)
+                MenuButton("🎒  КОЛЛЕКЦИЯ", GamePalette.NeonCyan, false, onShop)
                 MenuButton("⚙  НАСТРОЙКИ", GamePalette.NeonRed, false, onSettings)
             }
 

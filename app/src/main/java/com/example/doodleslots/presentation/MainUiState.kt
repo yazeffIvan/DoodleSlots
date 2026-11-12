@@ -17,17 +17,18 @@ data class MainUiState(
     val activePerks: Set<String> = emptySet(),
     val activeBoosts: Set<String> = emptySet(),
 
+    // Слоты
     val slotReels: List<Int> = listOf(0, 1, 2),
     val slotOffsets: List<Float> = listOf(0f, 0f, 0f),
     val slotSpinning: Boolean = false,
-    val slotBet: Int = 10,
+    val slotSymbols: List<String> = emptyList(), // <--- новое
     val slotLastResult: String? = null,
-    val slotLastWin: Int = 0,
+    val slotWonSkins: List<String> = emptyList(),
+    val slotRewardVisible: Boolean = false,
 
     val dailyQuests: List<DailyQuest> = emptyList(),
     val dailyStreak: Int = 0,
 
-    // === Режим ===
     val modeSelectionVisible: Boolean = false,
     val gameMode: String = "NORMAL",
     val hardcoreBest: Int = 0
